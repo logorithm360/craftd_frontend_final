@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Project } from '../types';
 
 export function ProjectsPage() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>(() => {
     const saved = localStorage.getItem('craftd_projects');
     if (saved) {
@@ -147,7 +149,8 @@ export function ProjectsPage() {
         {filteredProjects.map((p) => (
           <div
             key={p.id}
-            className="bg-slate-900/30 border border-slate-900 hover:border-slate-800 rounded-xl p-6 transition-all duration-300 flex flex-col justify-between"
+            onClick={() => navigate(`/dashboard/tasks?projectId=${p.id}`)}
+            className="bg-slate-900/30 border border-slate-900 hover:border-emerald-500/40 hover:bg-slate-900/50 cursor-pointer rounded-xl p-6 transition-all duration-300 flex flex-col justify-between group/card shadow-lg hover:shadow-emerald-500/5"
           >
             <div>
               {/* Card Title Header */}
@@ -188,29 +191,38 @@ export function ProjectsPage() {
               </div>
 
               {/* Bottom Tags & Metrics */}
-              <div className="border-t border-slate-900 pt-4 flex justify-between items-center gap-4">
-                <div className="flex flex-wrap gap-1.5">
-                  {p.tags?.slice(0, 2).map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 font-mono text-[9px]"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {p.tags && p.tags.length > 2 && (
-                    <span className="text-[9px] text-slate-600 font-mono font-bold">
-                      +{p.tags.length - 2}
-                    </span>
-                  )}
+              <div className="border-t border-slate-900 pt-4 flex flex-col gap-3">
+                <div className="flex justify-between items-center gap-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.tags?.slice(0, 2).map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 font-mono text-[9px]"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    {p.tags && p.tags.length > 2 && (
+                      <span className="text-[9px] text-slate-600 font-mono font-bold">
+                        +{p.tags.length - 2}
+                      </span>
+                    )}
+                  </div>
+
+                  <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H2" />
+                    </svg>
+                    {p.completedTaskCount}/{p.taskCount} Tasks
+                  </span>
                 </div>
 
-                <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
-                  <svg className="w-3.5 h-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H2" />
+                <div className="text-[11px] font-bold text-slate-500 group-hover/card:text-emerald-400 transition-colors flex items-center gap-1 mt-1">
+                  <span>View Associated Tasks</span>
+                  <svg className="w-3.5 h-3.5 transform group-hover/card:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                   </svg>
-                  {p.completedTaskCount}/{p.taskCount} Tasks
-                </span>
+                </div>
               </div>
             </div>
           </div>
