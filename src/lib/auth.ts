@@ -11,12 +11,16 @@ export async function loginUser(credentials: { email: string; password?: string 
 export async function registerUser(details: { email: string; password?: string; name?: string }) {
   return apiRequest<{ accessToken: string; refreshToken: string; user: AuthUser }>('auth/register', {
     method: 'POST',
-    body: JSON.stringify(details),
+    body: JSON.stringify({
+      email: details.email,
+      password: details.password,
+      username: details.name,
+    }),
   });
 }
 
 export async function logoutUser() {
-  return apiRequest<void>('auth/logout', {
+  return apiRequest<void>('auth/vscode/logout', {
     method: 'POST',
   });
 }
@@ -28,7 +32,7 @@ export async function refreshSession() {
 }
 
 export async function identifyUser() {
-  return apiRequest<AuthUser>('auth/identify', {
+  return apiRequest<AuthUser>('auth/me', {
     method: 'GET',
   });
 }

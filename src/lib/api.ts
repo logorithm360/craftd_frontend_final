@@ -1,160 +1,133 @@
-import type { ApiResponse, AuthUser } from '../types';
+import type { ApiResponse } from '../types';
 
-// In Phase 1 (frontend only), we'll mock the Fetch API behavior using localStorage
-// and simulated delays, so that UI loading transitions function beautifully and
-// the application can be fully run and checked as a standalone.
-// We also implement token headers & refresh mechanism so it's ready for Phase 2/3.
+const NESTJS_URL = 'http://localhost:3001';
+let accessToken: string | null = null;
 
-const DELAY_MS = 400;
-
-export const sleep = (ms: number = DELAY_MS) => new Promise((resolve) => setTimeout(resolve, ms));
-
-interface MockStoredUser {
-  id: string;
-  email: string;
-  password?: string;
-  name?: string;
-  avatarUrl?: string;
-  createdAt: string;
+// Helper to determine if a path is public
+function isPublicEndpoint(path: string): boolean {
+  return path.startsWith('auth/login') || path.startsWith('auth/register');
 }
 
 export async function apiRequest<T = unknown>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
-  await sleep();
+  const path = endpoint.replace(/^\//, '');
+  const url = `${NESTJS_URL}/${path}`;
 
-  // For future NestJS/FastAPI integration, headers are prepared:
-  const token = localStorage.getItem('access_token');
+  // Clone headers and prepare request
   const headers = new Headers(options.headers || {});
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
+
+  if (accessToken && !isPublicEndpoint(path)) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
   }
   headers.set('Content-Type', 'application/json');
 
-  // Simulated Mock responses for Local Storage persistence in Phase 1
-  const path = endpoint.replace(/^\//, '');
+  const requestOptions: RequestInit = {
+    ...options,
+    headers,
+    credentials: 'include', // sends httpOnly cookies for sessions
+  };
 
-  if (path.startsWith('auth/login')) {
-    const body = JSON.parse((options.body as string) || '{}') as { email?: string; password?: string };
-    const users = JSON.parse(localStorage.getItem('mock_users') || '[]') as MockStoredUser[];
-    const user = users.find((u) => u.email === body.email && u.password === body.password);
+  try {
+    let response = await fetch(url, requestOptions);
 
-    // Create a default admin user if none exists
-    if (!user && body.email === 'admin@craftd.sh' && body.password === 'password') {
-      const defaultUser: AuthUser = {
-        id: 'user_admin',
-        email: 'admin@craftd.sh',
-        name: 'Alex Craftd',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-        createdAt: new Date().toISOString()
+    // Auto-refresh mechanism on 401 Unauthorized (unless trying to log in/register)
+    if (response.status === 401 && !isPublicEndpoint(path)) {
+      console.log('Access token expired, attempting silent session refresh...');
+      const refreshSuccess = await attemptRefresh();
+
+      if (refreshSuccess && accessToken) {
+        // Retry the original request with the new access token
+        headers.set('Authorization', `Bearer ${accessToken}`);
+        response = await fetch(url, {
+          ...options,
+          headers,
+          credentials: 'include',
+        });
+      } else {
+        // Refresh failed, clear token and let downstream handles handle it
+        accessToken = null;
+        return { success: false, error: 'Unauthorized: Session expired' };
+      }
+    }
+
+    // Capture access token from response body if present in auth requests
+    if (isPublicEndpoint(path) || path.startsWith('auth/refresh')) {
+      const clonedResponse = response.clone();
+      try {
+        const body = await clonedResponse.json() as {
+          accessToken?: string;
+          refreshToken?: string;
+          data?: { accessToken?: string; refreshToken?: string };
+        };
+
+        // Downward support for nested data objects
+        const resolvedData = body.data || body;
+        if (resolvedData?.accessToken) {
+          accessToken = resolvedData.accessToken;
+        }
+      } catch (err) {
+        console.error('Failed to parse auth token payload:', err);
+      }
+    }
+
+    if (!response.ok) {
+      let errorMessage = 'Request failed';
+      try {
+        const errJson = await response.json() as { message?: string; error?: string };
+        errorMessage = errJson.message || errJson.error || errorMessage;
+      } catch {
+        // Fallback to text
+        try {
+          errorMessage = await response.text() || errorMessage;
+        } catch {
+          // ignore parsing error, stick with default errorMessage
+        }
+      }
+      return { success: false, error: errorMessage };
+    }
+
+    // If request succeeded, parse and return JSON body
+    try {
+      const data = await response.json() as T;
+      return { success: true, data };
+    } catch {
+      // Endpoint returned no content / succeeded (like 204 or void)
+      return { success: true, data: {} as T };
+    }
+  } catch (error) {
+    console.error(`Fetch API Error for ${url}:`, error);
+    return { success: false, error: error instanceof Error ? error.message : 'Network connection failure' };
+  }
+}
+
+async function attemptRefresh(): Promise<boolean> {
+  const url = `${NESTJS_URL}/auth/refresh`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include', // sends refresh token cookie
+    });
+
+    if (response.ok) {
+      const body = await response.json() as {
+        accessToken?: string;
+        refreshToken?: string;
+        data?: { accessToken?: string; refreshToken?: string };
       };
-      localStorage.setItem('access_token', 'mock_access_token');
-      localStorage.setItem('refresh_token', 'mock_refresh_token');
-      localStorage.setItem('current_user', JSON.stringify(defaultUser));
-      return {
-        success: true,
-        message: 'Logged in successfully',
-        data: {
-          accessToken: 'mock_access_token',
-          refreshToken: 'mock_refresh_token',
-          user: defaultUser
-        } as unknown as T
-      };
+      const resolvedData = body.data || body;
+      if (resolvedData?.accessToken) {
+        accessToken = resolvedData.accessToken;
+        return true;
+      }
     }
-
-    if (user) {
-      const authUser: AuthUser = { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, createdAt: user.createdAt };
-      localStorage.setItem('access_token', 'mock_access_token_' + user.id);
-      localStorage.setItem('refresh_token', 'mock_refresh_token_' + user.id);
-      localStorage.setItem('current_user', JSON.stringify(authUser));
-      return {
-        success: true,
-        message: 'Logged in successfully',
-        data: {
-          accessToken: 'mock_access_token_' + user.id,
-          refreshToken: 'mock_refresh_token_' + user.id,
-          user: authUser
-        } as unknown as T
-      };
-    }
-    return { success: false, error: 'Invalid email or password' };
+    return false;
+  } catch (error) {
+    console.error('Silent session refresh failed:', error);
+    return false;
   }
-
-  if (path.startsWith('auth/register')) {
-    const body = JSON.parse((options.body as string) || '{}') as { email?: string; password?: string; name?: string };
-    if (!body.email || !body.password) {
-      return { success: false, error: 'Email and password are required' };
-    }
-    const users = JSON.parse(localStorage.getItem('mock_users') || '[]') as MockStoredUser[];
-    if (users.some((u) => u.email === body.email)) {
-      return { success: false, error: 'User already exists with this email' };
-    }
-
-    const newUser: MockStoredUser = {
-      id: 'user_' + Math.random().toString(36).substring(2, 9),
-      email: body.email,
-      password: body.password,
-      name: body.name || body.email.split('@')[0],
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-      createdAt: new Date().toISOString()
-    };
-    users.push(newUser);
-    localStorage.setItem('mock_users', JSON.stringify(users));
-
-    const authUser: AuthUser = { id: newUser.id, email: newUser.email, name: newUser.name, avatarUrl: newUser.avatarUrl, createdAt: newUser.createdAt };
-    localStorage.setItem('access_token', 'mock_access_token_' + newUser.id);
-    localStorage.setItem('refresh_token', 'mock_refresh_token_' + newUser.id);
-    localStorage.setItem('current_user', JSON.stringify(authUser));
-
-    return {
-      success: true,
-      message: 'Registered successfully',
-      data: {
-        accessToken: 'mock_access_token_' + newUser.id,
-        refreshToken: 'mock_refresh_token_' + newUser.id,
-        user: authUser
-      } as unknown as T
-    };
-  }
-
-  if (path.startsWith('auth/logout')) {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('current_user');
-    return { success: true, message: 'Logged out successfully' };
-  }
-
-  if (path.startsWith('auth/refresh')) {
-    const rToken = localStorage.getItem('refresh_token');
-    if (!rToken) {
-      return { success: false, error: 'No refresh token' };
-    }
-    const currentUser = JSON.parse(localStorage.getItem('current_user') || 'null') as AuthUser | null;
-    if (!currentUser) {
-      return { success: false, error: 'User session expired' };
-    }
-    return {
-      success: true,
-      data: {
-        accessToken: rToken.replace('refresh', 'access'),
-        refreshToken: rToken,
-        user: currentUser
-      } as unknown as T
-    };
-  }
-
-  if (path.startsWith('auth/identify')) {
-    const userJson = localStorage.getItem('current_user');
-    if (!userJson) {
-      return { success: false, error: 'Not authenticated' };
-    }
-    return {
-      success: true,
-      data: JSON.parse(userJson) as T
-    };
-  }
-
-  // Fallback / Real fetch if integration phase was reached (simulated here)
-  return { success: false, error: 'Endpoint not simulated' };
 }
