@@ -17,23 +17,29 @@ def run_cuj(page):
     # Capture Landing Page Screenshot
     page.screenshot(path="verification/screenshots/landing_page.png")
 
-    # 2. Go to Login Page
-    print("Navigating to Login Page...")
-    # Find link that contains "Log In" or "Log"
-    page.click("a:has-text('Log In')")
-    page.wait_for_timeout(800)
+    # 2. Go to Login Page / Dashboard
+    print("Navigating to Dashboard or Login Page...")
+    dashboard_button = page.query_selector("a:has-text('Go to Dashboard')")
+    if dashboard_button:
+        print("Already authenticated! Clicking Go to Dashboard...")
+        dashboard_button.click()
+        page.wait_for_timeout(1000)
+    else:
+        # Find link that contains "Log In" or "Log"
+        page.click("a:has-text('Log In')")
+        page.wait_for_timeout(800)
 
-    # Fill in Admin credentials
-    print("Filling in login credentials...")
-    page.fill("input[id='email']", "admin@craftd.sh")
-    page.wait_for_timeout(400)
-    page.fill("input[id='password']", "password")
-    page.wait_for_timeout(400)
+        # Fill in Admin credentials
+        print("Filling in login credentials...")
+        page.fill("input[id='email']", "admin@craftd.sh")
+        page.wait_for_timeout(400)
+        page.fill("input[id='password']", "password")
+        page.wait_for_timeout(400)
 
-    # Submit login form
-    print("Submitting login form...")
-    page.click("button:has-text('Sign In to Workspace')")
-    page.wait_for_timeout(2000) # Wait for simulation delay + redirect
+        # Submit login form
+        print("Submitting login form...")
+        page.click("button:has-text('Sign In to Workspace')")
+        page.wait_for_timeout(2000) # Wait for simulation delay + redirect
 
     # Capture Projects Dashboard Screenshot
     page.screenshot(path="verification/screenshots/projects_dashboard.png")

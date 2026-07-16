@@ -37,6 +37,9 @@ export interface Task {
   description?: string;
   status: 'todo' | 'in_progress' | 'completed';
   priority: 'low' | 'medium' | 'high';
+  concept?: string;
+  explanation?: string;
+  codeExample?: string;
   dueDate?: string;
   createdAt: string;
 }
