@@ -1,7 +1,9 @@
-import type { ApiResponse } from '../types';
+import type { ApiResponse, ProjectTasksResponse } from '../types';
 
 const NESTJS_URL = 'http://localhost:3001';
 let accessToken: string | null = null;
+
+export function getNestjsToken() { return accessToken; }
 
 // Helper to determine if a path is public
 function isPublicEndpoint(path: string): boolean {
@@ -98,76 +100,98 @@ export async function apiRequest<T = unknown>(
     }
   } catch (error) {
     console.error(`Fetch API Error for ${url}:`, error);
-
-    // Standalone fallback: if the backend is not running, simulate successful mock responses
-    if (path.startsWith('auth/login') || path.startsWith('auth/register')) {
-      const mockUser = {
-        id: 'user_dev',
-        email: 'admin@craftd.sh',
-        name: 'Developer',
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-        createdAt: new Date().toISOString()
-      };
-      accessToken = 'mock_access_token';
-      return {
-        success: true,
-        data: {
-          accessToken: 'mock_access_token',
-          refreshToken: 'mock_refresh_token',
-          user: mockUser
-        } as unknown as T
-      };
-    }
-
-    if (path.startsWith('auth/refresh') || path.startsWith('auth/me')) {
-      const mockUser = {
-        id: 'user_dev',
-        email: 'admin@craftd.sh',
-        name: 'Developer',
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-        createdAt: new Date().toISOString()
-      };
-      accessToken = 'mock_access_token';
-      return {
-        success: true,
-        data: {
-          accessToken: 'mock_access_token',
-          refreshToken: 'mock_refresh_token',
-          user: mockUser
-        } as unknown as T
-      };
-    }
-
-    return { success: false, error: error instanceof Error ? error.message : 'Network connection failure' };
+    return { success: false, error: error instanceof Error ? error.message : 'Network error' };
   }
 }
 
 async function attemptRefresh(): Promise<boolean> {
-  const url = `${NESTJS_URL}/auth/refresh`;
   try {
-    const response = await fetch(url, {
+    const response = await fetch(`${NESTJS_URL}/auth/refresh`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include', // sends refresh token cookie
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
     });
-
     if (response.ok) {
-      const body = await response.json() as {
-        accessToken?: string;
-        refreshToken?: string;
-        data?: { accessToken?: string; refreshToken?: string };
-      };
-      const resolvedData = body.data || body;
-      if (resolvedData?.accessToken) {
-        accessToken = resolvedData.accessToken;
+      const body = await response.json() as { accessToken?: string; refreshToken?: string; data?: { accessToken?: string; refreshToken?: string } };
+      const resolved = body.data || body;
+      if (resolved?.accessToken) {
+        accessToken = resolved.accessToken;
         return true;
       }
     }
-    return false;
-  } catch (error) {
-    console.error('Silent session refresh failed:', error);
-    return false;
+  } catch {
+    // Network error -- silent fail
   }
+  return false;
+}
+
+// ── Task / Project API ───────────────────────────────────────────────────────
+
+export async function fetchProjects() {
+  return apiRequest<Array<Record<string, unknown>>>('api/projects');
+}
+
+export async function fetchProjectTasks(projectId: string) {
+  return apiRequest<ProjectTasksResponse>(`api/projects/${projectId}/tasks`);
+}
+
+export async function fetchTaskDetail(taskId: string) {
+  return apiRequest<Record<string, unknown>>(`api/tasks/${taskId}`);
+}
+
+// ── FastAPI (port 8000) ──────────────────────────────────────────────────────
+
+const FASTAPI_URL = 'http://localhost:8000';
+let fastApiAccessToken: string | null = null;
+
+export function setFastApiToken(token: string | null) {
+  fastApiAccessToken = token;
+}
+
+export function getFastApiToken() {
+  return fastApiAccessToken;
+}
+
+async function fastApiRequest<T = unknown>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+  const url = `${FASTAPI_URL}/${endpoint.replace(/^\//, '')}`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (fastApiAccessToken) {
+    headers['Authorization'] = `Bearer ${fastApiAccessToken}`;
+  }
+
+  try {
+    const res = await fetch(url, { ...options, headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || err.detail || `HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    return { success: true, data: data as T };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
+/** Exchange a NestJS JWT for a FastAPI JWT. */
+export async function exchangeNestjsToken(nestjsToken: string) {
+  return fastApiRequest<{ access_token: string; user_id: string; email: string }>(
+    '/teaching/auth/nestjs-exchange',
+    { method: 'POST', body: JSON.stringify({ nestjs_token: nestjsToken }) },
+  );
+}
+
+/** Get or create the VS Code ID for the current user. Requires a FastAPI JWT. */
+export async function fetchVscodeId() {
+  return fastApiRequest<{ vscode_id: string }>('/teaching/auth/vscode-id');
+}
+
+/** Exchange a VS Code ID for a FastAPI JWT. Public endpoint. */
+export async function exchangeVscodeId(vscodeId: string) {
+  return fastApiRequest<{ access_token: string; user_id: string; email: string }>(
+    '/teaching/auth/vscode-id',
+    { method: 'POST', body: JSON.stringify({ vscode_id: vscodeId }) },
+  );
 }

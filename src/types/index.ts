@@ -43,3 +43,35 @@ export interface Task {
   dueDate?: string;
   createdAt: string;
 }
+
+export interface BackendTask {
+  id: string;
+  sectionId: string;
+  instructions: string;
+  concept: string;
+  explanation: string | null;
+  codeExample: string | null;
+  difficulty: number;
+  orderIndex: number;
+  status: string;
+  isLocked: boolean;
+  canWork: boolean;
+}
+
+export interface TaskSection {
+  id: string;
+  name: string;
+  orderIndex: number;
+  tasks: BackendTask[];
+}
+
+export interface ProjectTasksResponse {
+  project: {
+    id: string;
+    title: string;
+    description?: string;
+  };
+  currentTaskId: string | null;
+  sections: TaskSection[];
+}
+

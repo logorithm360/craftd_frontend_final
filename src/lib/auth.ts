@@ -36,3 +36,10 @@ export async function identifyUser() {
     method: 'GET',
   });
 }
+
+export async function vscodeCallback(state: string) {
+  return apiRequest<{ redirectUrl: string }>('auth/vscode/callback', {
+    method: 'POST',
+    body: JSON.stringify({ state }),
+  });
+}

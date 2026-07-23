@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/use-auth';
 
@@ -9,7 +9,7 @@ interface LocationState {
 }
 
 export function LoginPage() {
-  const { login, vscodeState, setVscodeState } = useAuth();
+  const { login, vscodeState, setVscodeState, vscodeCallback } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -20,6 +20,27 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
 
   const from = (location.state as LocationState)?.from?.pathname || '/dashboard/projects';
+
+  // Auto-complete VS Code callback if session cookie is still active
+  useEffect(() => {
+    if (!vscodeState) return;
+    let cancelled = false;
+    fetch('http://localhost:3001/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (data) => {
+        if (cancelled || !data?.accessToken) return;
+        const redirectUrl = await vscodeCallback(vscodeState);
+        if (redirectUrl && !cancelled) {
+          window.location.href = redirectUrl;
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [vscodeState, vscodeCallback]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +55,15 @@ export function LoginPage() {
     setIsSubmitting(false);
 
     if (success) {
+      // If this came from the VS Code extension login flow,
+      // complete the VSCode callback and redirect browser to deep link
+      if (vscodeState) {
+        const redirectUrl = await vscodeCallback(vscodeState);
+        if (redirectUrl) {
+          window.location.href = redirectUrl;
+          return;
+        }
+      }
       navigate(from, { replace: true });
     } else {
       setError('Invalid email or password. (Hint: use admin@craftd.sh / password)');

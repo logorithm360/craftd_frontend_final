@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../hooks/use-auth';
+import { getNestjsToken, exchangeNestjsToken, fetchVscodeId, setFastApiToken } from '../lib/api';
 
 export function SettingsPage() {
   const { vscodeState, setVscodeState, user, updateProfile } = useAuth();
@@ -8,15 +9,34 @@ export function SettingsPage() {
   // Input states
   const [name, setName] = useState(user?.name || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
-  const [copied, setCopied] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [vscodeId, setVscodeId] = useState<string | null>(() => localStorage.getItem('craftd_vscode_id'));
+  const [vscodeLoading, setVscodeLoading] = useState(false);
+  const [vscodeCopied, setVscodeCopied] = useState(false);
 
-  const mockToken = 'craftd_usr_token_9x2b8z71y6w5v4u3';
-
-  const handleCopyToken = () => {
-    navigator.clipboard.writeText(mockToken);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleRefreshVscodeId = async () => {
+    setVscodeLoading(true);
+    try {
+      const nestToken = getNestjsToken();
+      if (!nestToken) {
+        setSuccessMsg('Please log in first to get your VS Code ID.');
+        setTimeout(() => setSuccessMsg(null), 3000);
+        return;
+      }
+      const exRes = await exchangeNestjsToken(nestToken);
+      if (exRes.success && exRes.data) {
+        setFastApiToken(exRes.data.access_token);
+        const vRes = await fetchVscodeId();
+        if (vRes.success && vRes.data?.vscode_id) {
+          localStorage.setItem('craftd_vscode_id', vRes.data.vscode_id);
+          setVscodeId(vRes.data.vscode_id);
+        }
+      }
+    } catch {
+      // silent
+    } finally {
+      setVscodeLoading(false);
+    }
   };
 
   const handleUpdateAccount = (e: React.FormEvent) => {
@@ -152,26 +172,42 @@ export function SettingsPage() {
               </div>
             )}
 
-            {/* Token Copy Section */}
+            {/* VS Code ID Section */}
             <div className="p-5 rounded-xl bg-slate-950 border border-slate-900 space-y-3">
               <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                Personal Workspace Integration Access Token
+                VS Code Connection
               </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={mockToken}
-                  className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-emerald-400 select-all focus:outline-none"
-                />
-                <button
-                  onClick={handleCopyToken}
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold cursor-pointer transition-all border border-slate-700"
-                >
-                  {copied ? 'Copied!' : 'Copy Token'}
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-600">Never share your access token. Re-generating will invalidate any previously synchronized devices.</p>
+              {vscodeId ? (
+                <>
+                  <p className="text-xs text-slate-400">Paste this ID in the VS Code extension under Settings → VS Code ID to connect your account.</p>
+                  <div className="flex gap-2">
+                    <code className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-emerald-400 select-all">
+                      {vscodeId}
+                    </code>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(vscodeId);
+                        setVscodeCopied(true);
+                        setTimeout(() => setVscodeCopied(false), 2000);
+                      }}
+                      className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold cursor-pointer transition-all border border-slate-700"
+                    >
+                      {vscodeCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-400">Log in to get your VS Code ID, then paste it in the VS Code extension to connect.</p>
+                  <button
+                    onClick={handleRefreshVscodeId}
+                    disabled={vscodeLoading}
+                    className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {vscodeLoading ? 'Loading...' : 'Refresh'}
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Simulated Device Registry */}
